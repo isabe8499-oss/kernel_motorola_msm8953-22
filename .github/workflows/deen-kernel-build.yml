@@ -54,6 +54,7 @@ jobs:
           echo "Target config: arch/arm64/configs/vendor/deen_defconfig"
 
       - name: Resolve BakaSU revision
+        id: resolve_bakasu
         if: ${{ inputs.build_root }}
         env:
           KSU_REF_INPUT: ${{ inputs.ksu_ref }}
@@ -62,13 +63,13 @@ jobs:
           git ls-remote https://github.com/Baka-SU/BakaSU.git "refs/heads/${KSU_REF_INPUT}" "refs/tags/${KSU_REF_INPUT}" "${KSU_REF_INPUT}" > /tmp/ksu-refs.txt
           KSU_SHA="$(awk 'NR==1 {print $1}' /tmp/ksu-refs.txt)
           if [ -z "$KSU_SHA" ]; then echo "Could not resolve BakaSU ref"; cat /tmp/ksu-refs.txt; exit 1; fi
-          echo "KSU_REF=$KSU_SHA" >> "$GITHUB_ENV"
+          echo "sha=$KSU_SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved BakaSU revision: $KSU_SHA"
 
       - name: Build kernel and optional BakaSU
         env:
           KSU_DIR: ${{ runner.temp }}/bakasu
-          KSU_REF: ${{ env.KSU_REF }}
+          KSU_REF: ${{ steps.resolve_bakasu.outputs.sha }}
           TOOLCHAIN_DIR: ${{ runner.temp }}/clang
         run: |
           set -euo pipefail
