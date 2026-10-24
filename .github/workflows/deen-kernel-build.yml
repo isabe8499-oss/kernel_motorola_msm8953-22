@@ -1,0 +1,97 @@
+name: DeenRev Kernel Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_root:
+        description: Build with external BakaSU driver (manual hooks)
+        type: boolean
+        required: true
+        default: false
+      build_zip:
+        description: Package Image.gz-dtb with SHANDZIN AnyKernel3
+        type: boolean
+        required: true
+        default: true
+      ksu_ref:
+        description: BakaSU commit/tag/branch; use a pinned commit for reproducibility
+        type: string
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deen-kernel-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 4.19.325-WIP
+          fetch-depth: 1
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ca-certificates curl flex git libelf-dev libssl-dev lld make pahole perl python3 python-is-python3 zip unzip jq cpio rsync
+
+      - name: Verify source and scripts
+        run: |
+          set -euo pipefail
+          grep -qx 'VERSION = 4' Makefile
+          grep -qx 'PATCHLEVEL = 19' Makefile
+          grep -qx 'SUBLEVEL = 325' Makefile
+          test -f arch/arm64/configs/vendor/deen_defconfig
+          bash -n build.sh
+          echo "Kernel source: $(git rev-parse HEAD)"
+          echo "Target config: arch/arm64/configs/vendor/deen_defconfig"
+
+      - name: Resolve BakaSU revision
+        if: ${{ inputs.build_root }}
+        env:
+          KSU_REF_INPUT: ${{ inputs.ksu_ref }}
+        run: |
+          set -euo pipefail
+          git ls-remote https://github.com/Baka-SU/BakaSU.git "refs/heads/${KSU_REF_INPUT}" "refs/tags/${KSU_REF_INPUT}" "${KSU_REF_INPUT}" > /tmp/ksu-refs.txt
+          KSU_SHA="$(awk 'NR==1 {print $1}' /tmp/ksu-refs.txt)
+          if [ -z "$KSU_SHA" ]; then echo "Could not resolve BakaSU ref"; cat /tmp/ksu-refs.txt; exit 1; fi
+          echo "KSU_REF=$KSU_SHA" >> "$GITHUB_ENV"
+          echo "Resolved BakaSU revision: $KSU_SHA"
+
+      - name: Build kernel and optional BakaSU
+        env:
+          KSU_DIR: ${{ runner.temp }}/bakasu
+          TOOLCHAIN_DIR: ${{ runner.temp }}/clang
+        run: |
+          set -euo pipefail
+          chmod +x build.sh
+          if [ "${{ inputs.build_root }}" = "true" ]; then
+            if [ "${{ inputs.build_zip }}" = "true" ]; then printf 'n\n' | ./build.sh deen -ksu -z; else printf 'n\n' | ./build.sh deen -ksu; fi
+          else
+            if [ "${{ inputs.build_zip }}" = "true" ]; then printf 'n\n' | ./build.sh deen -z; else printf 'n\n' | ./build.sh deen; fi
+          fi
+
+      - name: Verify build outputs
+        run: |
+          set -euo pipefail
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          sha256sum out/arch/arm64/boot/Image.gz-dtb
+          if [ "${{ inputs.build_zip }}" = "true" ]; then shopt -s nullglob; zips=(DeenRev-deen*.zip); test "${#zips[@]}" -gt 0; sha256sum "${zips[@]}"; fi
+
+      - name: Upload kernel image and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-kernel-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            build_log.txt
+            DeenRev-deen*.zip
