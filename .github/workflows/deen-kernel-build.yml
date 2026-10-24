@@ -68,6 +68,7 @@ jobs:
       - name: Build kernel and optional BakaSU
         env:
           KSU_DIR: ${{ runner.temp }}/bakasu
+          KSU_REF: ${{ env.KSU_REF }}
           TOOLCHAIN_DIR: ${{ runner.temp }}/clang
         run: |
           set -euo pipefail
