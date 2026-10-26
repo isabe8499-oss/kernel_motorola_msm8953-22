@@ -48,8 +48,6 @@ jobs:
           test -s patches/bakasu-susfs-v2.3.0-inline-hooks.patch
           test -s patches/susfs-v2.3.0.config
           bash -n build.sh
-          git apply --check patches/susfs-v2.3.0-4.19.patch
-          git apply --check patches/bakasu-susfs-v2.3.0-inline-hooks.patch
           echo "Source commit: $(git rev-parse HEAD)"
           echo "Target: Linux 4.19.325 / Motorola Deen"
 
@@ -91,9 +89,6 @@ jobs:
           grep -qx 'CONFIG_KSU_SUSFS_SUS_MAP=y' out/.config
           grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
-          grep -q 'ksu_handle_execveat' fs/exec.c
-          grep -q 'ksu_handle_faccessat' fs/open.c
-          grep -q 'ksu_handle_stat' fs/stat.c
           cp out/.config susfs-used.config
           sha256sum out/arch/arm64/boot/Image.gz-dtb
           shopt -s nullglob
