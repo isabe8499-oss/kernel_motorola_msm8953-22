@@ -3,23 +3,13 @@ name: DeenRev Kernel Build
 on:
   workflow_dispatch:
     inputs:
-      build_root:
-        description: Required by SUSFS 2.3.0 build; compile with external BakaSU
-        type: boolean
-        required: true
-        default: true
       build_zip:
         description: Package Image.gz-dtb with SHANDZIN AnyKernel3
         type: boolean
         required: true
         default: true
-      build_susfs:
-        description: Apply SUSFS 2.3.0 for Linux 4.19 and enable supported features (requires BakaSU)
-        type: boolean
-        required: true
-        default: true
       ksu_ref:
-        description: BakaSU commit/tag/branch; use a pinned commit for reproducibility
+        description: BakaSU commit, tag or branch
         type: string
         required: true
         default: main
@@ -47,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ca-certificates curl flex git libelf-dev libssl-dev lld make pahole perl python3 python-is-python3 zip unzip jq cpio rsync
 
-      - name: Verify source and scripts
+      - name: Verify kernel, SUSFS patches, and build script
         run: |
           set -euo pipefail
           grep -qx 'VERSION = 4' Makefile
@@ -60,23 +50,26 @@ jobs:
           bash -n build.sh
           git apply --check patches/susfs-v2.3.0-4.19.patch
           git apply --check patches/bakasu-susfs-v2.3.0-inline-hooks.patch
-          echo "Kernel source: $(git rev-parse HEAD)"
-          echo "Target config: arch/arm64/configs/vendor/deen_defconfig"
+          echo "Source commit: $(git rev-parse HEAD)"
+          echo "Target: Linux 4.19.325 / Motorola Deen"
 
       - name: Resolve BakaSU revision
         id: resolve_bakasu
-        if: ${{ inputs.build_root }}
         env:
           KSU_REF_INPUT: ${{ inputs.ksu_ref }}
         run: |
           set -euo pipefail
           git ls-remote https://github.com/Baka-SU/BakaSU.git "refs/heads/${KSU_REF_INPUT}" "refs/tags/${KSU_REF_INPUT}" "${KSU_REF_INPUT}" > /tmp/ksu-refs.txt
           KSU_SHA="$(awk 'NR==1 {print $1}' /tmp/ksu-refs.txt)"
-          if [ -z "$KSU_SHA" ]; then echo "Could not resolve BakaSU ref"; cat /tmp/ksu-refs.txt; exit 1; fi
+          if [ -z "$KSU_SHA" ]; then
+            echo "Could not resolve BakaSU ref: ${KSU_REF_INPUT}"
+            cat /tmp/ksu-refs.txt
+            exit 1
+          fi
           echo "sha=$KSU_SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved BakaSU revision: $KSU_SHA"
 
-      - name: Build kernel and optional BakaSU
+      - name: Build BakaSU + SUSFS 2.3.0 kernel and flashable ZIP
         env:
           KSU_DIR: ${{ runner.temp }}/bakasu
           KSU_REF: ${{ steps.resolve_bakasu.outputs.sha }}
@@ -84,42 +77,39 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          if [ "${{ inputs.build_susfs }}" = "true" ] && [ "${{ inputs.build_root }}" != "true" ]; then
-            echo "SUSFS 2.3.0 requires the BakaSU in-tree driver; select build_root=true."
-            exit 2
-          fi
-          if [ "${{ inputs.build_root }}" = "true" ]; then
-            if [ "${{ inputs.build_zip }}" = "true" ]; then printf 'n\n' | ./build.sh deen -ksu -z; else printf 'n\n' | ./build.sh deen -ksu; fi
-          else
-            if [ "${{ inputs.build_zip }}" = "true" ]; then printf 'n\n' | ./build.sh deen -z; else printf 'n\n' | ./build.sh deen; fi
-          fi
+          printf 'n\n' | ./build.sh deen -ksu -z
 
-      - name: Verify build outputs
+      - name: Verify artifacts and active SUSFS config
         run: |
           set -euo pipefail
           test -s out/arch/arm64/boot/Image.gz-dtb
-          if [ "${{ inputs.build_susfs }}" = "true" ]; then
-            grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
-            grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' out/.config
-            grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config
-            grep -qx 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' out/.config
-            grep -qx 'CONFIG_KSU_SUSFS_SUS_MAP=y' out/.config
-            grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
-            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
-            cp out/.config susfs-used.config
-          fi
+          test -s out/.config
+          grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_MAP=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          cp out/.config susfs-used.config
           sha256sum out/arch/arm64/boot/Image.gz-dtb
-          if [ "${{ inputs.build_zip }}" = "true" ]; then shopt -s nullglob; zips=(DeenRev-deen*.zip); test "${#zips[@]}" -gt 0; sha256sum "${zips[@]}"; fi
+          shopt -s nullglob
+          zips=(DeenRev-deen-KSU-*.zip)
+          test "${#zips[@]}" -gt 0
+          sha256sum "${zips[@]}"
 
-      - name: Upload kernel image and logs
+      - name: Upload kernel, config, checksums, and failure logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-kernel-${{ github.run_number }}
+          name: deen-susfs23-${{ github.run_number }}
           if-no-files-found: warn
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             out/.config
             susfs-used.config
             build_log.txt
-            DeenRev-deen*.zip
+            DeenRev-deen-KSU-*.zip
