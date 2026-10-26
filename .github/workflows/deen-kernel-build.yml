@@ -1,6 +1,9 @@
 name: DeenRev Kernel Build
 
 on:
+  push:
+    branches:
+      - bakasu-susfs23-deen
   workflow_dispatch:
     inputs:
       build_zip:
@@ -55,7 +58,7 @@ jobs:
       - name: Resolve BakaSU revision
         id: resolve_bakasu
         env:
-          KSU_REF_INPUT: ${{ inputs.ksu_ref }}
+          KSU_REF_INPUT: ${{ inputs.ksu_ref || 'main' }}
         run: |
           set -euo pipefail
           git ls-remote https://github.com/Baka-SU/BakaSU.git "refs/heads/${KSU_REF_INPUT}" "refs/tags/${KSU_REF_INPUT}" "${KSU_REF_INPUT}" > /tmp/ksu-refs.txt
