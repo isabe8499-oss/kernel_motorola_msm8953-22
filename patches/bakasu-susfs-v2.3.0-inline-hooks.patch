@@ -374,3 +374,19 @@ index fa98ba2e9e39..389b0a38afa9 100644
  	up_read(&uts_sem);
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
+
+
+diff --git a/kernel/reboot.c b/kernel/reboot.c
+--- a/kernel/reboot.c
++++ b/kernel/reboot.c
+@@ -308,5 +308,5 @@
+-#ifdef CONFIG_KSU_MANUAL_HOOK
++#ifdef CONFIG_KSU_SUSFS
+ extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+                                void __user **arg);
+ #endif
+@@ -320,4 +320,4 @@
+-#ifdef CONFIG_KSU_MANUAL_HOOK
++#ifdef CONFIG_KSU_SUSFS
+ 	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+ #endif
