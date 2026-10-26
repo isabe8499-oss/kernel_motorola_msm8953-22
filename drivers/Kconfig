@@ -244,7 +244,7 @@ config KSU_EXTERNAL
 	  The external checkout is cached outside the kernel Git tree.
 
 if KSU_EXTERNAL
-# An ordinary checkout must configure without downloading the optional driver.
+# BakaSU config is exposed only when the external checkout is present.
 source "$(shell,test -f $(srctree)/drivers/kernelsu/Kconfig && echo drivers/kernelsu/Kconfig || echo /dev/null)"
 endif
 endmenu
