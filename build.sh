@@ -200,7 +200,6 @@ setup_ksu() {
 apply_susfs_patches() {
     local patch_file
     local expected=("fs/susfs.c" "include/linux/susfs.h" "include/linux/susfs_def.h")
-    # Apply the upstream-compatible 4.19 kernel port and BakaSU inline hooks exactly once.
     for patch_file in "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
         [ -s "$patch_file" ] || { echo "Missing patch: $patch_file"; exit 1; }
         if git -C "$kernel_dir" apply --check "$patch_file"; then
@@ -374,9 +373,17 @@ completion() {
 
 # Execution
 check_deps
-if [ "$KSU_FLAG" = true ]; then apply_susfs_patches; fi
 setup_toolchain
 setup_ksu
+if [ "$KSU_FLAG" = true ]; then
+    apply_susfs_patches
+    for option in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+        if ! grep -RqsE "^[[:space:]]*(config|menuconfig)[[:space:]]+${option}([[:space:]]|$)" "$kernel_dir/drivers/kernelsu"; then
+            echo "Selected BakaSU revision lacks Kconfig definition: ${option}"
+            exit 1
+        fi
+    done
+fi
 
 DO_UPLOAD=false
 COMPILE_HDR=false
