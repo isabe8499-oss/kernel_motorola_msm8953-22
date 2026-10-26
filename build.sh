@@ -226,10 +226,10 @@ configure_ksu() {
         echo "Enabling BakaSU SUSFS 2.3.0 (manual hooks)"
         "${kernel_dir}/scripts/config" --file "$config" \
             -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK \
+            -d KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            -d KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            -d KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
             -e KSU_SUSFS \
-            -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-            -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-            -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
             -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
             -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SUS_MAP \
             -e KSU_SUSFS_OPEN_REDIRECT \
@@ -249,6 +249,12 @@ configure_ksu() {
             if ! grep -qx "CONFIG_${option}=y" "$config"; then
                 echo "CONFIG_${option} missing after olddefconfig; check BakaSU config/dependencies"
                 grep -E 'SUSFS|KSU' "$config" || true
+                exit 1
+            fi
+        done
+        for option in KSU_MANUAL_HOOK_AUTO_SETUID_HOOK KSU_MANUAL_HOOK_AUTO_INITRC_HOOK KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
+            if grep -qx "CONFIG_${option}=y" "$config"; then
+                echo "Duplicate automatic/manual hook configuration remains enabled: ${option}"
                 exit 1
             fi
         done
