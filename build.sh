@@ -199,41 +199,23 @@ setup_ksu() {
 
 apply_susfs_patches() {
     local patch_file
-    local expected=(
-        "fs/susfs.c"
-        "include/linux/susfs.h"
-        "include/linux/susfs_def.h"
-    )
-    # The SUSFS kernel patch owns the SUSFS menuconfig symbols and source tree.
-    # Then BakaSU inline-hook compatibility is patched only after the SUSFS core.
-    for patch_file in \
-        "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" \
-        "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
-        [ -s "$patch_file" ] || {
-            echo -e "${RED}Missing SUSFS patch: $patch_file${NC}"
-            exit 1
-        }
-        # Require a pristine kernel tree for repeatable patches. They are
-        # vendored into this repository and applied once per workflow checkout.
+    local expected=("fs/susfs.c" "include/linux/susfs.h" "include/linux/susfs_def.h")
+    for patch_file in "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
+        [ -s "$patch_file" ] || { echo "Missing SUSFS patch: $patch_file"; exit 1; }
         if git -C "$kernel_dir" apply --check "$patch_file"; then
             git -C "$kernel_dir" apply "$patch_file" || exit "$?"
         elif git -C "$kernel_dir" apply --reverse --check "$patch_file"; then
             echo "Patch already applied: $(basename "$patch_file")"
         else
-            echo -e "${RED}Patch does not apply cleanly: $(basename "$patch_file")${NC}"
-            echo "Refusing a partial/unsafe SUSFS integration; inspect the diff and build log."
+            echo "Patch does not apply cleanly: $(basename "$patch_file")"
             exit 1
         fi
     done
     for path in "${expected[@]}"; do
-        [ -s "$kernel_dir/$path" ] || {
-            echo -e "${RED}SUSFS core file absent after patching: $path${NC}"
-            exit 1
-        }
+        [ -s "$kernel_dir/$path" ] || { echo "SUSFS core file absent: $path"; exit 1; }
     done
-    grep -q 'SUSFS_VERSION "2.3.00"' "$kernel_dir/include/linux/susfs.h" || {
-        echo -e "${RED}Expected SUSFS v2.3.00 identifiers were not found${NC}"
-        exit 1
+    grep -q 'SUSFS_VERSION "v2.3.0"' "$kernel_dir/include/linux/susfs.h" || {
+        echo "Expected SUSFS v2.3.0 version marker not found"; exit 1;
     }
 }
 
@@ -241,7 +223,7 @@ configure_ksu() {
     local config="${objdir}/.config"
     local option
     if [ "$KSU_FLAG" = true ]; then
-        echo -e "${YLW}Enabling BakaSU with SUSFS 2.3.0 (manual hooks, built-in)...${NC}"
+        echo "Enabling BakaSU with SUSFS 2.3.0 (manual hooks, built-in)..."
         "${kernel_dir}/scripts/config" --file "$config" \
             -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK \
             -e KSU_SUSFS \
@@ -250,8 +232,10 @@ configure_ksu() {
             -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
             -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
             -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SUS_MAP \
-            -e KSU_SUSFS_SUS_PROC_FD -e KSU_SUSFS_SUS_MEMFD \
-            -e KSU_SUSFS_SUS_MOUNT_MARK -e KSU_SUSFS_OPEN_REDIRECT || exit "$?"
+            -e KSU_SUSFS_OPEN_REDIRECT \
+            -e KSU_SUSFS_ENABLE_LOG -e KSU_SUSFS_SPOOF_UNAME \
+            -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS || exit "$?"
     else
         "${kernel_dir}/scripts/config" --file "$config" -d KSU_EXTERNAL -d KSU || exit "$?"
     fi
@@ -264,14 +248,16 @@ configure_ksu() {
                       KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
                       KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
             if ! grep -qx "CONFIG_${option}=y" "$config"; then
-                echo -e "${RED}Error: CONFIG_${option} was not enabled after olddefconfig. Check SUSFS/BakaSU dependencies.${NC}"
+                echo "CONFIG_${option} missing after olddefconfig; inspect SUSFS/BakaSU dependencies"
                 grep -E 'SUSFS|KSU' "$config" || true
                 exit 1
             fi
         done
-        echo "Enabled SUSFS configuration:"
         grep -E '^CONFIG_KSU_SUSFS' "$config"
-    elif grep -q '^CONFIG_KSU=[ym]
+    elif grep -q '^CONFIG_KSU=[ym]$' "$config"; then
+        echo "Error: KSU is enabled without -ksu."; exit 1
+    fi
+}
 
 make_defconfig() {
     SECONDS=0
