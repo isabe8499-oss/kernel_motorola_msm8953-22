@@ -200,8 +200,9 @@ setup_ksu() {
 apply_susfs_patches() {
     local patch_file
     local expected=("fs/susfs.c" "include/linux/susfs.h" "include/linux/susfs_def.h")
+    # Apply the upstream-compatible 4.19 kernel port and BakaSU inline hooks exactly once.
     for patch_file in "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
-        [ -s "$patch_file" ] || { echo "Missing SUSFS patch: $patch_file"; exit 1; }
+        [ -s "$patch_file" ] || { echo "Missing patch: $patch_file"; exit 1; }
         if git -C "$kernel_dir" apply --check "$patch_file"; then
             git -C "$kernel_dir" apply "$patch_file" || exit "$?"
         elif git -C "$kernel_dir" apply --reverse --check "$patch_file"; then
@@ -215,7 +216,7 @@ apply_susfs_patches() {
         [ -s "$kernel_dir/$path" ] || { echo "SUSFS core file absent: $path"; exit 1; }
     done
     grep -q 'SUSFS_VERSION "v2.3.0"' "$kernel_dir/include/linux/susfs.h" || {
-        echo "Expected SUSFS v2.3.0 version marker not found"; exit 1;
+        echo "Expected SUSFS v2.3.0 marker not found"; exit 1;
     }
 }
 
@@ -223,7 +224,7 @@ configure_ksu() {
     local config="${objdir}/.config"
     local option
     if [ "$KSU_FLAG" = true ]; then
-        echo "Enabling BakaSU with SUSFS 2.3.0 (manual hooks, built-in)..."
+        echo "Enabling BakaSU SUSFS 2.3.0 (manual hooks)"
         "${kernel_dir}/scripts/config" --file "$config" \
             -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK \
             -e KSU_SUSFS \
@@ -241,29 +242,24 @@ configure_ksu() {
     fi
     make -s "${MAKE_ARGS[@]}" olddefconfig || exit "$?"
     if [ "$KSU_FLAG" = true ]; then
-        # SUSFS 2.3.0 for 4.19 exposes its runtime options through BakaSU's Kconfig.
-        # Fail closed if this selected BakaSU revision lacks those definitions.
-        for option in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
-            if ! grep -RqsE "^[[:space:]]*(config|menuconfig)[[:space:]]+${option}([[:space:]]|$)" "${kernel_dir}/drivers/kernelsu"; then
-                echo "Selected BakaSU revision lacks Kconfig definition: ${option}"
-                exit 1
-            fi
-        done
         for option in KSU_EXTERNAL KSU KSU_MANUAL_HOOK KALLSYMS_ALL \
                       KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT \
                       KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT \
+                      KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME \
+                      KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
                       KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
                       KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
                       KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
             if ! grep -qx "CONFIG_${option}=y" "$config"; then
-                echo "CONFIG_${option} missing after olddefconfig; inspect SUSFS/BakaSU dependencies"
+                echo "CONFIG_${option} missing after olddefconfig; check BakaSU config/dependencies"
                 grep -E 'SUSFS|KSU' "$config" || true
                 exit 1
             fi
         done
+        echo "Effective SUSFS settings:"
         grep -E '^CONFIG_KSU_SUSFS' "$config"
     elif grep -q '^CONFIG_KSU=[ym]$' "$config"; then
-        echo "Error: KSU is enabled without -ksu."; exit 1
+        echo "KSU enabled without -ksu"; exit 1
     fi
 }
 
@@ -378,7 +374,7 @@ completion() {
 
 # Execution
 check_deps
-apply_susfs_patches
+if [ "$KSU_FLAG" = true ]; then apply_susfs_patches; fi
 setup_toolchain
 setup_ksu
 
