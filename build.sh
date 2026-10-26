@@ -382,6 +382,7 @@ completion() {
 
 # Execution
 check_deps
+apply_susfs_patches
 setup_toolchain
 setup_ksu
 
