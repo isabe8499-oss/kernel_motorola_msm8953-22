@@ -197,31 +197,282 @@ setup_ksu() {
     echo -e "${LGR}KSU: $revision (cache: $ksu_dir)${NC}"
 }
 
+apply_susfs_patches() {
+    local patch_file
+    local expected=(
+        "fs/susfs.c"
+        "include/linux/susfs.h"
+        "include/linux/susfs_def.h"
+    )
+    for patch_file in \
+        "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" \
+        "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
+        [ -s "$patch_file" ] || {
+            echo -e "${RED}Missing SUSFS patch: $patch_file${NC}"
+            exit 1
+        }
+        # Require a pristine kernel tree for repeatable patches. They are
+        # vendored into this repository and applied once per workflow checkout.
+        if git -C "$kernel_dir" apply --check "$patch_file"; then
+            git -C "$kernel_dir" apply "$patch_file" || exit "$?"
+        elif git -C "$kernel_dir" apply --reverse --check "$patch_file"; then
+            echo "Patch already applied: $(basename "$patch_file")"
+        else
+            echo -e "${RED}Patch does not apply cleanly: $(basename "$patch_file")${NC}"
+            echo "Refusing a partial/unsafe SUSFS integration; inspect the diff and build log."
+            exit 1
+        fi
+    done
+    for path in "${expected[@]}"; do
+        [ -s "$kernel_dir/$path" ] || {
+            echo -e "${RED}SUSFS core file absent after patching: $path${NC}"
+            exit 1
+        }
+    done
+    grep -q 'SUSFS_VERSION "2.3.00"' "$kernel_dir/include/linux/susfs.h" || {
+        echo -e "${RED}Expected SUSFS v2.3.00 identifiers were not found${NC}"
+        exit 1
+    }
+}
+
 configure_ksu() {
     local config="${objdir}/.config"
     local option
     if [ "$KSU_FLAG" = true ]; then
-        echo -e "${YLW}Enabling KSU (manual hooks, built-in)...${NC}"
+        echo -e "${YLW}Enabling BakaSU with SUSFS 2.3.0 (manual hooks, built-in)...${NC}"
         "${kernel_dir}/scripts/config" --file "$config" \
-            -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK -d KSU_SUSFS \
+            -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK \
+            -e KSU_SUSFS \
             -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
             -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-            -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK || exit "$?"
+            -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
+            -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
+            -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SUS_MAP \
+            -e KSU_SUSFS_SUS_PROC_FD -e KSU_SUSFS_SUS_MEMFD \
+            -e KSU_SUSFS_SUS_MOUNT_MARK -e KSU_SUSFS_OPEN_REDIRECT || exit "$?"
     else
         "${kernel_dir}/scripts/config" --file "$config" -d KSU_EXTERNAL -d KSU || exit "$?"
     fi
     make -s "${MAKE_ARGS[@]}" olddefconfig || exit "$?"
     if [ "$KSU_FLAG" = true ]; then
         for option in KSU_EXTERNAL KSU KSU_MANUAL_HOOK KALLSYMS_ALL \
+                      KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT \
+                      KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT \
                       KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
                       KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
                       KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
             if ! grep -qx "CONFIG_${option}=y" "$config"; then
-                echo -e "${RED}Error: CONFIG_${option} was not enabled. Check kernel dependencies.${NC}"
+                echo -e "${RED}Error: CONFIG_${option} was not enabled after olddefconfig. Check SUSFS/BakaSU dependencies.${NC}"
+                grep -E 'SUSFS|KSU' "$config" || true
                 exit 1
             fi
         done
-    elif grep -q '^CONFIG_KSU=[ym]$' "$config"; then
+        echo "Enabled SUSFS configuration:"
+        grep -E '^CONFIG_KSU_SUSFS' "$config"
+    elif grep -q '^CONFIG_KSU=[ym]
+
+make_defconfig() {
+    SECONDS=0
+    echo -e "${LGR}########### Generating Defconfig ############${NC}"
+
+    # Generates the base defconfig using the same LLVM tools as the build.
+    make -s "${MAKE_ARGS[@]}" "$CONFIG_FILE" || exit "$?"
+    configure_ksu
+}
+
+compile_headers() {
+    echo -e "${YLW}########### Compiling Headers ############${NC}"
+    local HDR_PATH="${objdir}/arch/arm64/boot/usr"
+    make -j"$(nproc --all)" "${MAKE_ARGS[@]}" \
+         INSTALL_HDR_PATH="$HDR_PATH" headers_install || return "$?"
+    find "$HDR_PATH" -type f \( -name ".install" -o -name "..install.cmd" \) -delete
+    echo -e "${LGR}Compiled and cleaned headers in: $HDR_PATH${NC}"
+}
+
+compile() {
+    echo -e "${LGR}########### Compiling kernel ############${NC}"
+    local TEMP_LOG=$(mktemp)
+    set -o pipefail
+    make -j"$(nproc --all)" "${MAKE_ARGS[@]}" Image.gz-dtb 2>&1 | tee "$TEMP_LOG"
+
+    local exit_status=$?
+    set +o pipefail
+
+    # A successful make must also produce the requested flashable image.
+    if [ "$exit_status" -eq 0 ] && [ ! -s "$KERNEL_IMAGE" ]; then
+        echo "Error: Image.gz-dtb was not generated: $KERNEL_IMAGE" | tee -a "$TEMP_LOG"
+        exit_status=1
+    fi
+
+    if [ $exit_status -ne 0 ]; then
+        [ $exit_status -eq 130 ] && exit 130
+        echo -e "${RED}Error: Compilation failed! Generating log...${NC}"
+        mv "$TEMP_LOG" "$LOG_FILE"
+        echo -e "${YLW}Build log saved locally: $LOG_FILE${NC}"
+        exit $exit_status
+    else
+        rm -f "$TEMP_LOG"
+        echo -e "${LGR}Kernel compiled successfully!${NC}"
+    fi
+}
+
+compile_dtbs() {
+    echo -e "${LGR}########### Compiling DTBs only ############${NC}"
+    local TEMP_LOG=$(mktemp)
+    set -o pipefail
+    make -j"$(nproc --all)" "${MAKE_ARGS[@]}" dtbs 2>&1 | tee "$TEMP_LOG"
+
+    local exit_status=$?
+    set +o pipefail
+
+    if [ $exit_status -ne 0 ]; then
+        [ $exit_status -eq 130 ] && exit 130
+        echo -e "${RED}Error: DTB compilation failed! Generating log...${NC}"
+        mv "$TEMP_LOG" "$LOG_FILE"
+        exit $exit_status
+    else
+        rm -f "$TEMP_LOG"
+        echo -e "${LGR}DTBs compiled successfully!${NC}"
+    fi
+
+    echo -e "${YLW}### Generated DTBs:${NC}"
+    find "${objdir}/arch/arm64/boot/dts" -name "*.dtb" | sort
+}
+
+completion() {
+    if [[ -s "$KERNEL_IMAGE" ]]; then
+        echo -e "${LGR}######### Packaging AnyKernel3 #########${NC}"
+        rm -rf "$anykernel"
+        git clone --depth=1 --single-branch https://github.com/SHANDZIN/AnyKernel3.git -b "$DEVICE" "$anykernel" || return "$?"
+        cp -f "$KERNEL_IMAGE" "$anykernel/" || return "$?"
+        cd "$anykernel" || exit 1
+        zip -r9 AnyKernel.zip * -x .git README.md \*placeholder || return "$?"
+        cp AnyKernel.zip "$kernel_dir/$zip_name" || return "$?"
+        cd "$kernel_dir" || exit 1
+        rm -rf "$anykernel"
+
+        echo -e "${LGR}#############################################${NC}"
+        echo -e "${LGR}####### Kernel packaged successfully! #######${NC}"
+        echo -e "${LGR}#############################################${NC}"
+
+        # Generation SHA256
+        echo -e "${YLW}Generating SHA256 checksum...${NC}"
+        SHA256=$(sha256sum "$zip_name" | awk '{print $1}')
+        echo -e "${YLW}SHA256 Checksum: ${NC}${SHA256}"
+
+        # Upload to Gofile if user selected YES before build
+        if [ "$DO_UPLOAD" = true ]; then
+            echo -e "${YLW}Checking Gofile status...${NC}"
+            SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name // "store1"')
+            echo -e "${YLW}Uploading ZIP to ${SERVER}...${NC}"
+            RESPONSE=$(curl -# -L -F "file=@$zip_name" "https://${SERVER}.gofile.io/contents/uploadfile")
+
+            # Validation
+            if echo "$RESPONSE" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+                DOWNLOAD_LINK=$(echo "$RESPONSE" | jq -r '.data.downloadPage')
+                echo -e "${LGR}Download Link: ${NC}${DOWNLOAD_LINK}"
+            else
+                echo -e "${RED}Upload failed!${NC}"
+            fi
+        else
+            echo -e "${YLW}Gofile upload skipped as requested.${NC}"
+        fi
+    fi
+}
+
+# Execution
+check_deps
+setup_toolchain
+setup_ksu
+
+DO_UPLOAD=false
+COMPILE_HDR=false
+
+if [ "$ZIP_FLAG" = true ]; then
+    # Prompt for Gofile upload
+    echo -ne "${YLW}Do you want to upload the final ZIP to Gofile after compilation? (y/N): ${NC}"
+    read -r UPLOAD_CHOICE
+    case "$UPLOAD_CHOICE" in
+        [yY][eE][sS]|[yY])
+            DO_UPLOAD=true
+            echo -e "${LGR}Upload enabled for this build.${NC}"
+            ;;
+        *)
+            echo -e "${YLW}Upload disabled. The ZIP will only be generated locally.${NC}"
+            ;;
+    esac
+else
+    # Prompt for compile headers (skipped in DTBs-only mode)
+    if [ "$DTBS_FLAG" != true ]; then
+    echo -ne "${YLW}Do you want to compile headers? (y/N): ${NC}"
+    read -r HDR_CHOICE
+    case "$HDR_CHOICE" in
+        [yY][eE][sS]|[yY])
+            COMPILE_HDR=true
+            echo -e "${LGR}Header compilation enabled.${NC}"
+            ;;
+        *)
+            echo -e "${YLW}Header compilation skipped.${NC}"
+            ;;
+    esac
+    fi
+fi
+
+
+SECONDS=0
+
+# DTBs only: preserve output files and reuse the existing configuration.
+if [ "$DTBS_FLAG" = true ]; then
+    if [ -f "${objdir}/.config" ]; then
+        echo -e "${YLW}Reusing the existing configuration in: ${objdir}${NC}"
+        # Preserve the previous root choice unless explicitly enabling it.
+        if [ "$KSU_FLAG" = true ]; then
+            configure_ksu
+        else
+            if grep -q '^CONFIG_KSU=y$' "${objdir}/.config"; then
+                "${kernel_dir}/scripts/config" --file "${objdir}/.config" -e KSU_EXTERNAL || exit "$?"
+            fi
+            make -s "${MAKE_ARGS[@]}" olddefconfig || exit "$?"
+        fi
+    else
+        make_defconfig
+    fi
+    compile_dtbs
+    DIFF=$SECONDS
+    BUILD_TIME="$((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)"
+    echo -e "\n${LGR}-------------------------------------------------------"
+    echo -e "DTBs completed successfully in: $BUILD_TIME"
+    echo -e "The generated files are located in: ${objdir}/arch/arm64/boot/dts/"
+    echo -e "-------------------------------------------------------${NC}"
+    cd "${kernel_dir}" || exit 1
+    exit 0
+fi
+
+clean_all
+make_defconfig
+compile
+
+# Time build
+DIFF=$SECONDS
+BUILD_TIME="$((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)"
+
+# compile() has verified that Image.gz-dtb exists and is not empty.
+if [ "$ZIP_FLAG" = true ]; then
+    completion || exit "$?"
+else
+    echo -e "\n${YLW}Info: Flag -z not detected. Compilation finished without generating ZIP.${NC}"
+    if [ "$COMPILE_HDR" = true ]; then
+        compile_headers || exit "$?"
+    fi
+fi
+
+echo -e "The generated image is located at: $KERNEL_IMAGE"
+echo -e "\n${LGR}-------------------------------------------------------"
+echo -e "Completed successfully in: $BUILD_TIME"
+echo -e "-------------------------------------------------------${NC}"
+
+cd "${kernel_dir}" || exit 1
+ "$config"; then
         echo -e "${RED}Error: KSU is enabled without -ksu.${NC}"
         exit 1
     fi
