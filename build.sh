@@ -271,6 +271,21 @@ make_defconfig() {
 
     # Generates the base defconfig using the same LLVM tools as the build.
     make -s "${MAKE_ARGS[@]}" "$CONFIG_FILE" || exit "$?"
+    if [ "$KSU_FLAG" = true ]; then
+        # Apply SUSFS after KSU has been linked and before the kernel is configured.
+        apply_susfs_patches
+        for option in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+            if ! grep -RqsE "^[[:space:]]*(config|menuconfig)[[:space:]]+${option}([[:space:]]|$)" "${kernel_dir}/drivers/kernelsu"; then
+                echo "Selected BakaSU revision lacks Kconfig definition: ${option}"
+                exit 1
+            fi
+        done
+        # Disable auto-hooks that the inline patch replaces to avoid double hooking.
+        "${kernel_dir}/scripts/config" --file "${objdir}/.config" \
+            -d KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            -d KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            -d KSU_MANUAL_HOOK_AUTO_INPUT_HOOK || exit "$?"
+    fi
     configure_ksu
 }
 
@@ -378,16 +393,6 @@ completion() {
 check_deps
 setup_toolchain
 setup_ksu
-if [ "$KSU_FLAG" = true ]; then
-    apply_susfs_patches
-    # The upstream SUSFS inline patch supplies the required manual calls.
-    # Disable automatic duplicate hooks, then explicitly enable manual hook mode.
-    "${kernel_dir}/scripts/config" --file "${objdir}/.config" \
-        -d KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-        -d KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-        -d KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
-        -e KSU_MANUAL_HOOK || exit "$?"
-fi
 
 DO_UPLOAD=false
 COMPILE_HDR=false
