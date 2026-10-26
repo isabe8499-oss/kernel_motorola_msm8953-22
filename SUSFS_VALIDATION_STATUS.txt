@@ -1,0 +1,7 @@
+branch=bakasu-susfs23-deen
+build_sha=9705aedf7781b207bd3ec48ab9cd8e362b110d18
+workflow_sha=ab187b4bc6a2776a6ff1c296c9d5f593fdebcab0
+susfs_disabled=false
+workflow_build=true
+patch_marker=true
+action=https://github.com/isabe8499-oss/kernel_motorola_msm8953-22/actions/workflows/deen-kernel-build.yml
