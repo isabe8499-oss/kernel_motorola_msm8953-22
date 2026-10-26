@@ -245,10 +245,7 @@ configure_ksu() {
                       KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT \
                       KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT \
                       KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME \
-                      KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-                      KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-                      KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-                      KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
+                      KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
             if ! grep -qx "CONFIG_${option}=y" "$config"; then
                 echo "CONFIG_${option} missing after olddefconfig; check BakaSU config/dependencies"
                 grep -E 'SUSFS|KSU' "$config" || true
