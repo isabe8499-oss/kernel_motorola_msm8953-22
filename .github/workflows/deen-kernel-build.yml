@@ -86,6 +86,37 @@ jobs:
           set -euo pipefail
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
+          test -s fs/nomount/nomount.c
+          grep -q '^config NOMOUNT          grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_MAP=y' out/.config
+          grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+          cp out/.config susfs-used.config
+          sha256sum out/arch/arm64/boot/Image.gz-dtb
+          shopt -s nullglob
+          zips=(DeenRev-deen-KSU-*.zip)
+          test "${#zips[@]}" -gt 0
+          sha256sum "${zips[@]}"
+
+      - name: Upload kernel, config, checksums, and failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-susfs23-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            out/.config
+            susfs-used.config
+            build_log.txt
+            DeenRev-deen-KSU-*.zip
+ fs/nomount/Kconfig
+          grep -q '#define NOMOUNT_BASE_VERSION "22"' fs/nomount/nomount.h
+          grep -qx 'CONFIG_KEYS=y' out/.config
+          grep -qx 'CONFIG_NOMOUNT=y' out/.config
           grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
           grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' out/.config
           grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config
