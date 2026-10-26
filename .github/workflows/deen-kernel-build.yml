@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       build_root:
-        description: Build with external BakaSU driver (manual hooks)
+        description: Required by SUSFS 2.3.0 build; compile with external BakaSU
         type: boolean
         required: true
-        default: false
+        default: true
       build_zip:
         description: Package Image.gz-dtb with SHANDZIN AnyKernel3
         type: boolean
@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           git ls-remote https://github.com/Baka-SU/BakaSU.git "refs/heads/${KSU_REF_INPUT}" "refs/tags/${KSU_REF_INPUT}" "${KSU_REF_INPUT}" > /tmp/ksu-refs.txt
-          KSU_SHA="$(awk 'NR==1 {print $1}' /tmp/ksu-refs.txt)
+          KSU_SHA="$(awk 'NR==1 {print $1}' /tmp/ksu-refs.txt)"
           if [ -z "$KSU_SHA" ]; then echo "Could not resolve BakaSU ref"; cat /tmp/ksu-refs.txt; exit 1; fi
           echo "sha=$KSU_SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved BakaSU revision: $KSU_SHA"
