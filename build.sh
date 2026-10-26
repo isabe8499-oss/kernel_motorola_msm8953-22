@@ -241,6 +241,14 @@ configure_ksu() {
     fi
     make -s "${MAKE_ARGS[@]}" olddefconfig || exit "$?"
     if [ "$KSU_FLAG" = true ]; then
+        # SUSFS 2.3.0 for 4.19 exposes its runtime options through BakaSU's Kconfig.
+        # Fail closed if this selected BakaSU revision lacks those definitions.
+        for option in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+            if ! grep -RqsE "^[[:space:]]*(config|menuconfig)[[:space:]]+${option}([[:space:]]|$)" "${kernel_dir}/drivers/kernelsu"; then
+                echo "Selected BakaSU revision lacks Kconfig definition: ${option}"
+                exit 1
+            fi
+        done
         for option in KSU_EXTERNAL KSU KSU_MANUAL_HOOK KALLSYMS_ALL \
                       KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT \
                       KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT \
