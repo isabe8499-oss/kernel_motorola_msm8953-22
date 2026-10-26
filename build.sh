@@ -204,6 +204,8 @@ apply_susfs_patches() {
         "include/linux/susfs.h"
         "include/linux/susfs_def.h"
     )
+    # The SUSFS kernel patch owns the SUSFS menuconfig symbols and source tree.
+    # Then BakaSU inline-hook compatibility is patched only after the SUSFS core.
     for patch_file in \
         "$kernel_dir/patches/susfs-v2.3.0-4.19.patch" \
         "$kernel_dir/patches/bakasu-susfs-v2.3.0-inline-hooks.patch"; do
