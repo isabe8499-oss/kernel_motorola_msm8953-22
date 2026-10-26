@@ -232,12 +232,9 @@ configure_ksu() {
     local config="${objdir}/.config"
     local option
     if [ "$KSU_FLAG" = true ]; then
-        echo "Enabling BakaSU SUSFS 2.3.0 (manual hooks)"
+        echo "Enabling BakaSU SUSFS 2.3.0 (SUSFS inline-hook mode)"
         "${kernel_dir}/scripts/config" --file "$config" \
-            -e KSU_EXTERNAL -e KSU -e KSU_MANUAL_HOOK -d KSU_TRACEPOINT_HOOK \
-            -d KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-            -d KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-            -d KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
+            -e KSU_EXTERNAL -e KSU -d KSU_TRACEPOINT_HOOK \
             -e KSU_SUSFS \
             -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
             -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SUS_MAP \
@@ -250,7 +247,7 @@ configure_ksu() {
     fi
     make -s "${MAKE_ARGS[@]}" olddefconfig || exit "$?"
     if [ "$KSU_FLAG" = true ]; then
-        for option in KSU_EXTERNAL KSU KSU_MANUAL_HOOK KALLSYMS_ALL \
+        for option in KSU_EXTERNAL KSU KALLSYMS_ALL \
                       KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT \
                       KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SUS_MAP KSU_SUSFS_OPEN_REDIRECT \
                       KSU_SUSFS_ENABLE_LOG KSU_SUSFS_SPOOF_UNAME \
@@ -261,12 +258,9 @@ configure_ksu() {
                 exit 1
             fi
         done
-        for option in KSU_MANUAL_HOOK_AUTO_SETUID_HOOK KSU_MANUAL_HOOK_AUTO_INITRC_HOOK KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
-            if grep -qx "CONFIG_${option}=y" "$config"; then
-                echo "Duplicate automatic/manual hook configuration remains enabled: ${option}"
-                exit 1
-            fi
-        done
+        # KSU_SUSFS and KSU_MANUAL_HOOK are mutually exclusive options in BakaSU's
+        # hook-method choice. SUSFS inline-hook mode is selected; do not require
+        # CONFIG_KSU_MANUAL_HOOK or validate its dependent auto-hook options.
         echo "Effective SUSFS settings:"
         grep -E '^CONFIG_KSU_SUSFS' "$config"
     elif grep -q '^CONFIG_KSU=[ym]$' "$config"; then
