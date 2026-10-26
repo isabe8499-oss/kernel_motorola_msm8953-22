@@ -48,6 +48,7 @@ jobs:
           test -s patches/bakasu-susfs-v2.3.0-inline-hooks.patch
           test -s patches/susfs-v2.3.0.config
           bash -n build.sh
+          test -z "$(grep -n -- '-d KSU_SUSFS' build.sh || true)"
           echo "Source commit: $(git rev-parse HEAD)"
           echo "Target: Linux 4.19.325 / Motorola Deen"
 
