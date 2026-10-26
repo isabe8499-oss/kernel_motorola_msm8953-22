@@ -982,27 +982,21 @@ diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
 index fa762c5fbcb2..5c42eb61f426 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
-@@ -4,8 +4,20 @@
- #include <linux/proc_fs.h>
- #include <linux/seq_file.h>
- 
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
-+extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
-+#endif
-+
- static int cmdline_proc_show(struct seq_file *m, void *v)
+@@ -58,6 +58,22 @@ static int cmdline_proc_show(struct seq_file *m, void *v)
  {
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
++	extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 +	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
 +		susfs_spoof_cmdline_or_bootconfig(m);
 +		seq_putc(m, '\n');
 +		return 0;
 +	}
 +#endif
- 	seq_puts(m, saved_command_line);
+ 	seq_puts(m, proc_command_line);
  	seq_putc(m, '\n');
  	return 0;
+ }
 diff --git a/fs/proc/fd.c b/fs/proc/fd.c
 index 253e503970cd..59d75ffdceca 100644
 --- a/fs/proc/fd.c
