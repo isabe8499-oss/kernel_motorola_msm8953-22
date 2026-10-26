@@ -13,6 +13,11 @@ on:
         type: boolean
         required: true
         default: true
+      build_susfs:
+        description: Apply SUSFS 2.3.0 for Linux 4.19 and enable supported features (requires BakaSU)
+        type: boolean
+        required: true
+        default: true
       ksu_ref:
         description: BakaSU commit/tag/branch; use a pinned commit for reproducibility
         type: string
@@ -34,7 +39,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: 4.19.325-WIP
+          ref: bakasu-susfs23-deen
           fetch-depth: 1
 
       - name: Install host dependencies
@@ -49,7 +54,12 @@ jobs:
           grep -qx 'PATCHLEVEL = 19' Makefile
           grep -qx 'SUBLEVEL = 325' Makefile
           test -f arch/arm64/configs/vendor/deen_defconfig
+          test -s patches/susfs-v2.3.0-4.19.patch
+          test -s patches/bakasu-susfs-v2.3.0-inline-hooks.patch
+          test -s patches/susfs-v2.3.0.config
           bash -n build.sh
+          git apply --check patches/susfs-v2.3.0-4.19.patch
+          git apply --check patches/bakasu-susfs-v2.3.0-inline-hooks.patch
           echo "Kernel source: $(git rev-parse HEAD)"
           echo "Target config: arch/arm64/configs/vendor/deen_defconfig"
 
@@ -74,6 +84,10 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
+          if [ "${{ inputs.build_susfs }}" = "true" ] && [ "${{ inputs.build_root }}" != "true" ]; then
+            echo "SUSFS 2.3.0 requires the BakaSU in-tree driver; select build_root=true."
+            exit 2
+          fi
           if [ "${{ inputs.build_root }}" = "true" ]; then
             if [ "${{ inputs.build_zip }}" = "true" ]; then printf 'n\n' | ./build.sh deen -ksu -z; else printf 'n\n' | ./build.sh deen -ksu; fi
           else
@@ -84,6 +98,16 @@ jobs:
         run: |
           set -euo pipefail
           test -s out/arch/arm64/boot/Image.gz-dtb
+          if [ "${{ inputs.build_susfs }}" = "true" ]; then
+            grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+            grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' out/.config
+            grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config
+            grep -qx 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' out/.config
+            grep -qx 'CONFIG_KSU_SUSFS_SUS_MAP=y' out/.config
+            grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
+            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+            cp out/.config susfs-used.config
+          fi
           sha256sum out/arch/arm64/boot/Image.gz-dtb
           if [ "${{ inputs.build_zip }}" = "true" ]; then shopt -s nullglob; zips=(DeenRev-deen*.zip); test "${#zips[@]}" -gt 0; sha256sum "${zips[@]}"; fi
 
@@ -95,5 +119,7 @@ jobs:
           if-no-files-found: warn
           path: |
             out/arch/arm64/boot/Image.gz-dtb
+            out/.config
+            susfs-used.config
             build_log.txt
             DeenRev-deen*.zip
