@@ -207,8 +207,17 @@ apply_susfs_patches() {
         elif git -C "$kernel_dir" apply --reverse --check "$patch_file"; then
             echo "Patch already applied: $(basename "$patch_file")"
         else
-            echo "Patch does not apply cleanly: $(basename "$patch_file")"
-            exit 1
+            echo "Git apply context mismatch; retrying with patch(1) fuzz=2: $(basename "$patch_file")"
+            if patch -d "$kernel_dir" -p1 --batch --forward --fuzz=2 < "$patch_file"; then
+                :
+            else
+                echo "Patch utility reported rejects for $(basename "$patch_file")"
+            fi
+            if find "$kernel_dir" -name '*.rej' -print -quit | grep -q .; then
+                echo "Reject files remain; refusing to compile a partially patched kernel."
+                find "$kernel_dir" -name '*.rej' -print
+                exit 1
+            fi
         fi
     done
     for path in "${expected[@]}"; do
