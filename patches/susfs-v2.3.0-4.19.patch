@@ -982,7 +982,7 @@ diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
 index fa762c5fbcb2..5c42eb61f426 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
-@@ -58,6 +58,22 @@ static int cmdline_proc_show(struct seq_file *m, void *v)
+@@ -58,5 +58,14 @@ static int cmdline_proc_show(struct seq_file *m, void *v)
  {
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +	extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
