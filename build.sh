@@ -430,7 +430,7 @@ fi
 
 SECONDS=0
 
-# DTBs only: preserve output files and reuse the existing configuration.
+# DTBs-only builds do not apply source patches; preserve the existing config.
 if [ "$DTBS_FLAG" = true ]; then
     if [ -f "${objdir}/.config" ]; then
         echo -e "${YLW}Reusing the existing configuration in: ${objdir}${NC}"
