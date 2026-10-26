@@ -243,12 +243,6 @@ config KSU_EXTERNAL
 	  Enable the optional KSU driver prepared by build.sh -ksu.
 	  The external checkout is cached outside the kernel Git tree.
 
-# SUSFS Kconfig lives with the external BakaSU driver, but its filesystem
-# implementation and kernel hooks are integrated in-tree by build.sh.
-if KSU_EXTERNAL
-source "fs/susfs/Kconfig"
-endif
-
 if KSU_EXTERNAL
 # An ordinary checkout must configure without downloading the optional driver.
 source "$(shell,test -f $(srctree)/drivers/kernelsu/Kconfig && echo drivers/kernelsu/Kconfig || echo /dev/null)"
