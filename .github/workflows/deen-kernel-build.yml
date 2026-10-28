@@ -81,6 +81,17 @@ jobs:
           chmod +x build.sh
           printf 'n\n' | ./build.sh deen -ksu -z
 
+      - name: Export kernel headers for Android ROM integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 HOSTCFLAGS=-fcommon \
+            INSTALL_HDR_PATH="$PWD/out/arch/arm64/boot/usr" headers_install
+          test -d out/arch/arm64/boot/usr/include
+          test -s out/arch/arm64/boot/usr/include/linux/version.h || \
+            test -s out/arch/arm64/boot/usr/include/linux/types.h
+          echo "Exported UAPI headers to out/arch/arm64/boot/usr"
+
       - name: Verify artifacts and active SUSFS config
         run: |
           set -euo pipefail
@@ -114,6 +125,7 @@ jobs:
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             out/.config
+            out/arch/arm64/boot/usr/**
             susfs-used.config
             build_log.txt
             DeenRev-deen-KSU-*.zip
