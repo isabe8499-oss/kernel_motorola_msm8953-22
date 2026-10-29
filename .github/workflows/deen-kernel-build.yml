@@ -113,7 +113,7 @@ jobs:
           grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
           cp out/.config susfs-used.config
-          printf 'kernel_version=4.19.325\\nkernel_source_commit=%s\\nbakasu_commit=%s\\nsusfs_version=v2.3.0\\nnomount_version=22\\n' "$(git rev-parse HEAD)" "$BAKASU_SHA" > kernel-build-metadata.txt
+          printf 'kernel_version=4.19.325\nkernel_source_commit=%s\nbakasu_commit=%s\nsusfs_version=v2.3.0\nnomount_version=22\n' "$(git rev-parse HEAD)" "$BAKASU_SHA" > kernel-build-metadata.txt
           sha256sum out/arch/arm64/boot/Image.gz-dtb
           shopt -s nullglob
           zips=(DeenRev-deen-KSU-*.zip)
