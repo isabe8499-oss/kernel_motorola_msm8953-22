@@ -93,12 +93,15 @@ jobs:
           echo "Exported UAPI headers to out/arch/arm64/boot/usr"
 
       - name: Verify artifacts and active SUSFS config
+        env:
+          BAKASU_SHA: ${{ steps.resolve_bakasu.outputs.sha }}
         run: |
           set -euo pipefail
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
           test -s fs/nomount/nomount.c
-          grep -q '^config NOMOUNT$' fs/nomount/Kconfig
+          grep -q '^config NOMOUNT
+ fs/nomount/Kconfig
           grep -q '#define NOMOUNT_BASE_VERSION "22"' fs/nomount/nomount.h
           grep -qx 'CONFIG_KEYS=y' out/.config
           grep -qx 'CONFIG_NOMOUNT=y' out/.config
@@ -110,6 +113,7 @@ jobs:
           grep -qx 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y' out/.config
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
           cp out/.config susfs-used.config
+          printf 'kernel_version=4.19.325\\nkernel_source_commit=%s\\nbakasu_commit=%s\\nsusfs_version=v2.3.0\\nnomount_version=22\\n' "$(git rev-parse HEAD)" "$BAKASU_SHA" > kernel-build-metadata.txt
           sha256sum out/arch/arm64/boot/Image.gz-dtb
           shopt -s nullglob
           zips=(DeenRev-deen-KSU-*.zip)
@@ -120,12 +124,17 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-susfs23-${{ github.run_number }}
+          # Stable artifact name lets the LineageOS workflow fetch the latest
+          # successful kernel build through a public artifact mirror.
+          name: deen-susfs23
           if-no-files-found: warn
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             out/.config
             out/arch/arm64/boot/usr/**
+            include/linux/susfs.h
+            fs/nomount/nomount.h
             susfs-used.config
+            kernel-build-metadata.txt
             build_log.txt
             DeenRev-deen-KSU-*.zip
